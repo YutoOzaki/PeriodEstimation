@@ -8,11 +8,13 @@ function [P, z, b] = PIE(x, Pmax, lmd)
     %% Binary mask
     w = ones(T, 1);
     w(isnan(x)) = 0;
+    x(isnan(x)) = 0;
     
     %% Ramanujan periodic dictionary
     A = [];
+    N = (0:(T - 1))';
     for i=1:numel(d)
-        C = ramsum((0:(T - 1))', d(i));
+        C = ramsum(N, d(i));
         P = arrayfun(@(j) circshift(C, j), 0:(ephi(i) - 1), 'UniformOutput', false)';
         P = cat(2, P{:});
         A = [A, P];
@@ -50,52 +52,47 @@ function [P, z, b] = PIE(x, Pmax, lmd)
     L = L - G;
     
     %% Algorithm
-    I = sparse(g, g);
-    for i=1:g
-        I(i, i) = 1;
-    end 
-    
-    O = ones(T, 1);
     rho = 1;
     z = x;
     y = zeros(g, 1);
     al = zeros(g, 1);
     be = zeros(g, 1);
     Ahat = A*iH;
+    I = sparse(g, g);
+    for i=1:g
+        I(i, i) = 1;
+    end 
     Q = inv(Ahat'*Ahat + 2*lmd(3).*L + rho.*I);
-    r3_old = 0;
-    r3 = 100;
-    eps1 = 5e-3;
-    eps3 = 5e-3;
-    l_old = Inf;
     
+    O = ones(T, 1);
     C1 = (2*lmd(1)).*w.*x;
     C2 = O + 2*lmd(1).*w;
     
-    while abs(r3 - r3_old)/r3 > eps3
-        r1 = 100;
-        r1_old = 0;
+    eps_b = 1e-4;
+    L_z = 100;
+    L_z_old = 0;
+    eps_z = 1e-4;
     
-        while abs(r1 - r1_old)/r1 > eps1
-            be_old = be;
-            r1_old = r1;
-            
+    while abs(1 - L_z/L_z_old) > eps_z
+        L_b = 100;
+        L_b_old = 0;
+    
+        while abs(1 - L_b/L_b_old) > eps_b
             be = Q*(Ahat'*z + rho.*al - y);
             v = be + y./rho;
             al = max(abs(v) - lmd(2)/rho, 0).*sign(v);
             y = y + (be - al);
             
-            r1 = mean((be - be_old).^2);
+            L_b_old = L_b;
+            L_b = 0.5*sum((z - Ahat*be).^2) + lmd(2)*sum(abs(be)) + lmd(3)*be'*L*be;
         end
         
         z = (C1 + Ahat*be)./C2;
         
-        l = 0.5*sum((z - Ahat*be).^2) + lmd(1)*sum((w.*(x - z)).^2) + ...
+        L_z_old = L_z;
+        L_z = 0.5*sum((z - Ahat*be).^2) + lmd(1)*sum((w.*(x - z)).^2) + ...
             lmd(2)*sum(abs(be)) + lmd(3)*be'*L*be;
-        
-        r3_old = r3;
-        r3 = (l - l_old)^2;
-        l_old = l;
+        fprintf('%s: L_z = %3.4f\n', datetime, L_z);
     end
     
     b = iH*al;
